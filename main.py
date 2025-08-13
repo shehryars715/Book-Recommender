@@ -1,34 +1,40 @@
-import os
-import pickle
+from sentence_transformers import SentenceTransformer
 import faiss
-from huggingface_hub import InferenceClient
 import numpy as np
+import pickle
+import pandas as pd
 
-# 1️⃣ Load FAISS index and metadata
-index = faiss.read_index("vectors.faiss")
-with open("metadata.pkl", "rb") as f:
-    texts = pickle.load(f)
+# Load your CSV file
+df = pd.read_csv("../data/cleaning/merged_category_dataset.csv")
+texts = df["isbn13_description"].tolist()
 
-# 2️⃣ Setup Hugging Face API client
-client = InferenceClient(api_key=os.environ["HF_TOKEN"])
+model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
-# 3️⃣ Define your query
-query = "AI in education"
+# Define your query
+query = input("Enter your query: ")
 
-# 4️⃣ Get embedding from Hugging Face API (feature extraction)
-embedding = client.feature_extraction(
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    inputs=query
-)
+# Encode the query
+query_vector = model.encode([query], convert_to_numpy=True)
 
-# Convert to NumPy array (FAISS requires float32)
-query_vector = np.array(embedding, dtype="float32").reshape(1, -1)
-
-# 5️⃣ Search in FAISS
+# Search in the FAISS index
+index = faiss.read_index("../data/vector_embeddings/faiss_index.index")
 distances, indices = index.search(query_vector, k=5)
 
-# 6️⃣ Show results
-print("Query:", query)
-print("\nTop matches:")
-for idx, dist in zip(indices[0], distances[0]):
-    print(f"Text: {texts[idx]}  |  Distance: {dist:.4f}")
+# Print results
+print(f"Top matches for query: {query}")
+for i, idx in enumerate(indices[0]):
+  
+    isbn13 = texts[idx].split(" ", 1)[0]
+    # Match in original DataFrame
+    book_info = df[df["isbn13"].astype(str) == isbn13]
+    
+    row = book_info.iloc[0]  # first matching row
+
+    title = row.get("full_title", "Unknown Title")
+    category = row.get("predicted_category", "Unknown Category")
+    description = row.get("description", "No description")
+
+    print(f"{title}")
+    print(f"Category: {category}")
+    print(f"Description: {description}")
+    print("-" * 50)
